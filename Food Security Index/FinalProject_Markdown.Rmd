@@ -1,0 +1,215 @@
+---
+title: "BA_FinalProject-Arangur"
+author: "Thorsteinn Nielsen"
+date: "December 20, 2016"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Reading the datasets.
+
+```{r}
+require('forecast')
+require('foreign')
+
+IndexCategories <- read.csv("IndexCategories.csv", header = TRUE)
+
+ses.2000 <- read.spss('ETH_2000_HICES_v01_M_v01_A_SHIP_SPSS/ETH_2000_E_P.sav')
+
+ses.2004 <- read.spss('ETH_2004_HICES_v01_M_v01_A_SHIP_SPSS/ETH_2004_HICES_v01_M_v01_A_SHIP_SPSS/ETH_2004_E_P.sav')
+
+expend201216 <- read.csv('FoodConsumption2012_16.csv')
+
+a <- read.csv('FinalScoring.csv')
+
+ScoresForForecasting <- read.csv('VariableScoresPredict.csv', header=TRUE,stringsAsFactors=FALSE)
+```
+
+Determining the most important index categories for the Global Food Security Index.
+
+```{r}
+IndexRegression <- lm(Index ~ AFFORDABILITY + AVAILABILITY + QUALITY.AND.SAFETY, data = IndexCategories)
+
+summary(IndexRegression)
+```
+
+Calculating household fod consumption as a share of total household consumption and its respective score.
+Using linear extrapolation between known datapoints (2000, 2004, 2010 and 2012).
+
+```{r}
+food.con.ratio.2000 <- mean((ses.2000$TOTFOOD)/(ses.2000$HHEXP_N))*100
+
+food.con.ratio.2004 <- mean(na.exclude((ses.2004$TOTFOOD)/(ses.2004$HHEXP_N)))*100
+
+interval1 <- (food.con.ratio.2004 - food.con.ratio.2000)/4
+
+food.con.ratio.2001 <- food.con.ratio.2000 + interval1
+food.con.ratio.2002 <- food.con.ratio.2000 + 2*interval1
+food.con.ratio.2003 <- food.con.ratio.2000 + 3*interval1
+
+food.con.ratio.2010 <- 46.1 #From report on food security in Ethiopia
+
+interval2 <- (food.con.ratio.2010 - food.con.ratio.2004)/6
+
+food.con.ratio.2005 <- food.con.ratio.2004 + interval2
+food.con.ratio.2006 <- food.con.ratio.2004 + 2*interval2
+food.con.ratio.2007 <- food.con.ratio.2004 + 3*interval2
+food.con.ratio.2008 <- food.con.ratio.2004 + 4*interval2
+food.con.ratio.2009 <- food.con.ratio.2004 + 5*interval2
+
+food.con.ratio.2012 <- expend201216$Percentage[1]
+
+food.con.ratio.2011 <- food.con.ratio.2010 + ((food.con.ratio.2012 - food.con.ratio.2010)/2)
+
+food.con.ratio <- c(food.con.ratio.2000, food.con.ratio.2001, food.con.ratio.2002, food.con.ratio.2003,
+                    food.con.ratio.2004, food.con.ratio.2005, food.con.ratio.2006, food.con.ratio.2007,
+                    food.con.ratio.2008, food.con.ratio.2009, food.con.ratio.2010, food.con.ratio.2011, food.con.ratio.2012)
+
+years <- c('2000','2001','2002','2003','2004','2005','2006','2007','2008','2009','2010','2011','2012')
+
+df.food.con.ratio <- data.frame(years,food.con.ratio)
+
+df.food.con.ratio
+
+plot(years, food.con.ratio, type = 'o', main = 'Household food expenditure as a percentage of total expenditure',xlab = 'Year', ylab = '% of total', col=ifelse(years %in% c(2001,2002,2003,2005,2006,2007,2008,2009,2011), "red", "black"), cex = 2, pch = 20)
+```
+
+Predicting the unknown scores for Household food expediture as share of total expenditure using linear regression.
+
+```{r}
+y <- expend201216$Score
+x <- expend201216$Percentage
+
+ratio.regression <- lm(y ~ x)
+
+score.extrapolation <- predict(ratio.regression,data.frame(x=food.con.ratio))
+
+df.scoreboard <- data.frame(years, food.con.ratio, score.extrapolation)
+
+df.scoreboard
+```
+
+Forecasting the rest of missing values using ARIMA.
+
+Forecast for X3:
+
+```{r}
+data <- ScoresForForecasting
+
+data
+
+ts.x3<-ts(data$X3)
+plot(ts.x3)
+
+ts.x3.arima<-arima(ts.x3, c(1,2,1))
+x3_arima_forecast<-forecast.Arima(ts.x3.arima, h=6)
+summary(x3_arima_forecast)
+```
+
+Forecast for X5:
+
+```{r}
+ts.x5<-ts(data$X5,start=2000,frequency=1)
+ts.x5.arima<-arima(ts.x5, c(1,2,1))
+x5_arima_forecast<-forecast.Arima(ts.x5.arima, h=5)
+summary(x5_arima_forecast)
+```
+
+Forecast for X7:
+
+```{r}
+ts.x7<-ts(data$X7,start=2000,frequency=1)
+ts.x7.arima<-arima(ts.x7, c(1,2,1))
+x7_arima_forecast<-forecast.Arima(ts.x7.arima, h=3)
+summary(x7_arima_forecast)
+```
+
+Forecast for X9:
+
+```{r}
+ts.x9<-ts(data$X9,start=2000,frequency=1)
+ts.x9.arima<-arima(ts.x9, c(1,2,1))
+x9_arima_forecast<-forecast.Arima(ts.x9.arima, h=3)
+summary(x9_arima_forecast)
+```
+
+Forecast for x10:
+
+```{r}
+ts.x10<-ts(data$X10,start=2000,frequency=1)
+ts.x10.arima<-arima(ts.x10, c(1,2,1))
+x10_arima_forecast<-forecast.Arima(ts.x10.arima, h=3)
+summary(x10_arima_forecast)
+```
+
+The Weighing Model.
+
+Step 1: Creating a correlation matrix
+
+```{r}
+a2 <- cor(a)
+
+a2
+```
+
+Step 2: Finding absolute values of correlations
+
+```{r}
+a3 <- abs(cor(a))
+
+a3
+```
+
+Step 3: Reversing the correlations
+
+```{r}
+b <- 1-abs(cor(a))
+
+b
+```
+
+Step 4: Finding column sums and normalizing the matrix by dividing every entry in each column with the column sum (scale function)
+
+```{r}
+c <- data.frame(b)
+
+d <- colSums(c)
+
+e <- scale(c, center = FALSE, scale = d)
+
+e
+```
+
+Step 5: Finding the mean values of every row which will represent our weights
+
+```{r}
+
+f <- 0
+
+for(i in 1:14){
+  f[i]<- mean(e[i,])
+  print(f[i])
+
+}
+
+f
+sum(f)
+```
+
+Now we multiply the factor scores for each year by their respective weights and get the index values for every year.
+
+```{r}
+
+g <- 0
+
+for(i in 1:16){
+  g[i]<-sum(f*a[i,])
+  
+}
+
+IndexValues <- g
+IndexValues
+```
